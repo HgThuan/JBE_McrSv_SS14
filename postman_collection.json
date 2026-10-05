@@ -1,0 +1,704 @@
+{
+	"info": {
+		"_postman_id": "c71a3841-3850-48cf-94f4-7e826e7a6850",
+		"name": "Session 14 - Microservices Security (Complete Suite)",
+		"description": "Postman Collection hoàn chỉnh cho toàn bộ Session 14:\n1. Identity-Service (Port 8085): Access Token + Refresh Token (PostgreSQL).\n2. Token Rotation Flow (3 Bước): Cấp mới và hủy token cũ.\n3. JWT Blacklist Flow (Redis & Logout): Lưu jti vào Redis với TTL và chặn token đã logout.\n4. Product-Service Resource Server (Port 8086): Phân quyền Method Level Security.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. Authentication & Tokens (Identity-Service)",
+			"item": [
+				{
+					"name": "1.1 Login as ADMIN (Lấy Admin Access Token có JTI)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"if (jsonData.accessToken) {",
+									"    pm.environment.set(\"adminAccessToken\", jsonData.accessToken);",
+									"    pm.environment.set(\"adminRefreshToken\", jsonData.refreshToken);",
+									"    console.log(\"Saved adminAccessToken!\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"username\": \"admin\",\n  \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "http://localhost:8085/api/auth/login",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8085",
+							"path": [
+								"api",
+								"auth",
+								"login"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "1.2 Login as USER (Lấy User Access Token có JTI)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"if (jsonData.accessToken) {",
+									"    pm.environment.set(\"userAccessToken\", jsonData.accessToken);",
+									"    pm.environment.set(\"userRefreshToken\", jsonData.refreshToken);",
+									"    console.log(\"Saved userAccessToken!\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"username\": \"user\",\n  \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "http://localhost:8085/api/auth/login",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8085",
+							"path": [
+								"api",
+								"auth",
+								"login"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "2. JWT Blacklist Flow (Redis & Logout Tức Thì)",
+			"item": [
+				{
+					"name": "2.1 Call Protected API trước khi Logout -> 200 OK",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{adminAccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:8085/api/test/user",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8085",
+							"path": [
+								"api",
+								"test",
+								"user"
+							]
+						},
+						"description": "Gọi Protected API với Access Token hợp lệ trước khi Logout."
+					},
+					"response": []
+				},
+				{
+					"name": "2.2 Logout (Đưa Access Token vào Redis Blacklist)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{adminAccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:8085/api/auth/logout",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8085",
+							"path": [
+								"api",
+								"auth",
+								"logout"
+							]
+						},
+						"description": "Gọi API Logout kèm Access Token. Hệ thống giải mã jti và exp, lưu blacklist:jti vào Redis với TTL."
+					},
+					"response": []
+				},
+				{
+					"name": "2.3 Call Protected API sau khi Logout -> 401 Unauthorized (Bị chặn bởi Blacklist)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 401 Unauthorized (Bị chặn bởi Redis Blacklist)\", function () {",
+									"    pm.response.to.have.status(401);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{adminAccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:8085/api/test/user",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8085",
+							"path": [
+								"api",
+								"test",
+								"user"
+							]
+						},
+						"description": "Gọi lại Protected API với Access Token vừa logout. Kết quả mong đợi: 401 Unauthorized."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "3. Token Rotation Flow (3 Bước Kiểm Thử)",
+			"item": [
+				{
+					"name": "Bước 1: Login lấy Token A và R1",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"pm.environment.set(\"tokenA\", jsonData.accessToken);",
+									"pm.environment.set(\"tokenR1\", jsonData.refreshToken);",
+									"console.log(\"Saved tokenA and tokenR1!\");"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"username\": \"user\",\n  \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "http://localhost:8085/api/auth/login",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8085",
+							"path": [
+								"api",
+								"auth",
+								"login"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Bước 2: Gửi R1 vào /refresh -> Nhận Token B và R2",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"pm.environment.set(\"tokenB\", jsonData.accessToken);",
+									"pm.environment.set(\"tokenR2\", jsonData.refreshToken);",
+									"pm.test(\"R2 khác R1 (Rotation thành công)\", function () {",
+									"    pm.expect(jsonData.refreshToken).to.not.equal(pm.environment.get(\"tokenR1\"));",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"refreshToken\": \"{{tokenR1}}\"\n}"
+						},
+						"url": {
+							"raw": "http://localhost:8085/api/auth/refresh",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8085",
+							"path": [
+								"api",
+								"auth",
+								"refresh"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Bước 3: Gửi lại R1 vào /refresh -> Nhận 403 Forbidden",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 403 Forbidden\", function () {",
+									"    pm.response.to.have.status(403);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"refreshToken\": \"{{tokenR1}}\"\n}"
+						},
+						"url": {
+							"raw": "http://localhost:8085/api/auth/refresh",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8085",
+							"path": [
+								"api",
+								"auth",
+								"refresh"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "4. Product-Service Resource Server (Port 8086)",
+			"item": [
+				{
+					"name": "4.1 GET All Products (User Token) -> 200 OK",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{userAccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:8086/api/products",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8086",
+							"path": [
+								"api",
+								"products"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "4.2 Kịch bản 1 (Thử sai): DELETE Product with USER Token -> 403 Forbidden",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 403 Forbidden\", function () {",
+									"    pm.response.to.have.status(403);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{userAccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:8086/api/products/1",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8086",
+							"path": [
+								"api",
+								"products",
+								"1"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "4.3 Kịch bản 2 (Thử đúng): DELETE Product with ADMIN Token -> 200 OK",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{adminAccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:8086/api/products/1",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8086",
+							"path": [
+								"api",
+								"products",
+								"1"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "5. API Gateway (Port 8088 - Centralized Security)",
+			"item": [
+				{
+					"name": "5.1 Login qua Gateway (Port 8088)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"if (jsonData.accessToken) {",
+									"    pm.environment.set(\"gwAccessToken\", jsonData.accessToken);",
+									"    pm.environment.set(\"gwRefreshToken\", jsonData.refreshToken);",
+									"    console.log(\"Saved gwAccessToken from Gateway!\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"username\": \"admin\",\n  \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "http://localhost:8088/api/auth/login",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8088",
+							"path": [
+								"api",
+								"auth",
+								"login"
+							]
+						},
+						"description": "Gọi login qua Spring Cloud Gateway (Port 8088) chuyển tiếp đến Identity-Service (Port 8085)."
+					},
+					"response": []
+				},
+				{
+					"name": "5.2 Gọi Product-Service qua Gateway (Trước Logout) -> 200 OK",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{gwAccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:8088/api/products",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8088",
+							"path": [
+								"api",
+								"products"
+							]
+						},
+						"description": "Truy cập Product-Service qua Gateway khi token hợp lệ và chưa logout. Gateway cho phép đi tiếp và trả về 200 OK."
+					},
+					"response": []
+				},
+				{
+					"name": "5.3 Logout qua Gateway -> 200 OK",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{gwAccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:8088/api/auth/logout",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8088",
+							"path": [
+								"api",
+								"auth",
+								"logout"
+							]
+						},
+						"description": "Gọi API Logout qua Gateway để đưa JTI của token vào Redis Blacklist."
+					},
+					"response": []
+				},
+				{
+					"name": "5.4 Gọi Product-Service qua Gateway (Sau Logout) -> 401 (Chặn tại Gateway)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 401 Unauthorized (Bị Gateway chặn ngay cửa ngõ)\", function () {",
+									"    pm.response.to.have.status(401);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"pm.test(\"Message xác nhận bị chặn tại Gateway\", function () {",
+									"    pm.expect(jsonData.message).to.include(\"Blacklisted tại Gateway\");",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{gwAccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:8088/api/products",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8088",
+							"path": [
+								"api",
+								"products"
+							]
+						},
+						"description": "Gọi Product-Service qua Gateway với token đã logout. Gateway kiểm tra Redis không đồng bộ (Reactive) và trả về 401 ngay lập tức mà không forward vào Product-Service."
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}
